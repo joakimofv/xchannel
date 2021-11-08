@@ -1,2 +1,5 @@
 # xchannel
-extra functionality on top of channels
+
+`import github.com/joakimofv/xchannel`
+
+https://pkg.go.dev/github.com/joakimofv/xchannel
