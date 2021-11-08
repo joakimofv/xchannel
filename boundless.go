@@ -2,14 +2,20 @@ package xchannel
 
 import (
 	"container/list"
+	"sync"
 )
 
+// Boundless functions as a channel that has an unlimited buffer size.
+// The zero value for Boundless is NOT ready for use, must use NewBoundless().
 type Boundless struct {
 	in       chan interface{}
 	out      chan interface{}
 	overflow *list.List
+
+	closed sync.Once
 }
 
+// NewBoundless returns a Boundless ready for use.
 func NewBoundless(bufferSize int) *Boundless {
 	b := &Boundless{
 		in:       make(chan interface{}),
@@ -20,19 +26,24 @@ func NewBoundless(bufferSize int) *Boundless {
 	return b
 }
 
+// Close closes the in-channel. Afterwards you should drain the out-channel in order to release all resources.
 func (b *Boundless) Close() {
-	close(b.in)
+	b.closed.Do(func() { close(b.in) })
 }
 
+// Drain drains the out-channel, discarding all remaining items.
+// Should be used in combination with Close(), or else the drain will never finish.
 func (b *Boundless) Drain() {
 	for range b.out {
 	}
 }
 
+// In gives a channel that should be sent to by the caller.
 func (b *Boundless) In() chan<- interface{} {
 	return b.in
 }
 
+// Out gives a channel that should be received from by the caller.
 func (b *Boundless) Out() <-chan interface{} {
 	return b.out
 }
