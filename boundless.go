@@ -1,7 +1,6 @@
 package xchannel
 
 import (
-	"container/list"
 	"sync"
 )
 
@@ -10,7 +9,7 @@ import (
 type Boundless struct {
 	in       chan interface{}
 	out      chan interface{}
-	overflow *list.List
+	overflow []interface{}
 
 	closed sync.Once
 }
@@ -18,9 +17,8 @@ type Boundless struct {
 // NewBoundless returns a Boundless ready for use.
 func NewBoundless(bufferSize int) *Boundless {
 	b := &Boundless{
-		in:       make(chan interface{}),
-		out:      make(chan interface{}, bufferSize),
-		overflow: list.New(),
+		in:  make(chan interface{}),
+		out: make(chan interface{}, bufferSize),
 	}
 	go b.run()
 	return b
@@ -51,11 +49,9 @@ func (b *Boundless) Out() <-chan interface{} {
 func (b *Boundless) run() {
 READ_LOOP:
 	for {
-		nextElement := b.overflow.Front()
-		if nextElement == nil {
-			// Overflow queue is empty so incoming items can be pushed
-			// directly to the outgoing channel. If outgoing channel is full
-			// though, push to overflow.
+		if len(b.overflow) == 0 {
+			// Overflow queue is empty so incoming items can be pushed directly to the outgoing channel.
+			// If outgoing channel is full though, push to overflow.
 			select {
 			case item, ok := <-b.in:
 				if !ok {
@@ -65,32 +61,28 @@ READ_LOOP:
 				case b.out <- item:
 					// Optimistically push directly to out.
 				default:
-					b.overflow.PushBack(item)
+					b.overflow = append(b.overflow, item)
 				}
 			}
 		} else {
-			// Overflow queue is not empty, so any new items get pushed to
-			// the back to preserve order.
+			nextElement := b.overflow[0]
+			// Overflow queue is not empty, so any new items get pushed to the back to preserve order.
 			select {
 			case item, ok := <-b.in:
 				if !ok {
 					break READ_LOOP
 				}
-				b.overflow.PushBack(item)
-			case b.out <- nextElement.Value:
-				b.overflow.Remove(nextElement)
+				b.overflow = append(b.overflow, item)
+			case b.out <- nextElement:
+				b.overflow = b.overflow[1:]
 			}
 		}
 	}
 
-	// Incoming channel has been closed. Empty overflow queue into
-	// the outgoing channel.
+	// Incoming channel has been closed. Empty overflow queue into the outgoing channel.
 	// Note: Outgoing channel should be drained by the user to prevent this from never completing.
-	nextElement := b.overflow.Front()
-	for nextElement != nil {
-		b.out <- nextElement.Value
-		b.overflow.Remove(nextElement)
-		nextElement = b.overflow.Front()
+	for _, nextElement := range b.overflow {
+		b.out <- nextElement
 	}
 
 	// Close outgoing channel.
